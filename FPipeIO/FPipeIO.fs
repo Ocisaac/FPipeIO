@@ -1,36 +1,28 @@
-﻿(*
-    code map - 0,0   0,1   .  .
-               1,0   1,1 
-               .           .
-               .              .
-    
-    todo: translate file to code
-*)
-
-
-namespace FPipeIO
+﻿namespace FPipeIO
     open System.Collections.Generic
-
     module FPipeIO =
+        type Settings = {ShowRead : bool; DoEnter : bool}
+
         type DataType =
             | Number of float32
             | Boolean of bool
+            | String of string
             | Invocation
-        
+
         type BinaryOperations = 
             | Add 
             | Mul 
             | And 
             | Or
+            | Concatanate
             | Equality 
-
         type UnaryOperations =
             | Negation
             | Inverse
             | Not
-
+            | ToChar
+        type IOOperation = Print | Read | Clear | NewLine
         type PipeDirection = Right | Up | Left | Down    
-        type IOOperation = Print | Read 
 
         type Digit = L0 | L1 | L2 | L3 | L4 | L5 | L6 | L7 | L8 | L9
         type Literal = 
@@ -50,8 +42,8 @@ namespace FPipeIO
             | Condition                  //behavior:  coded - input from top/bottom, (if there is more then one bool in the packet they are or'd)
 //                                                            if false go left, else go right (by default, if there are no bools will go left)  
             | Invocer                    //behavior:  coded - flows invocation down
-
         type Code = CodeObject list list
+
         type State = System.Collections.Generic.Dictionary<int*int, DataType list>
 
         let charToCodeObject c = match c with
@@ -67,6 +59,8 @@ namespace FPipeIO
 
                                  | 'P' -> IO Print
                                  | 'R' -> IO Read
+                                 | 'C' -> IO Clear
+                                 | 'N' -> IO NewLine
 
                                  | '0' -> Lit (IntLit L0)
                                  | '1' -> Lit (IntLit L1)
@@ -86,13 +80,14 @@ namespace FPipeIO
                                  | '*' -> BinOp Mul
                                  | '&' -> BinOp And
                                  | '|' -> BinOp Or
+                                 | '@' -> BinOp Concatanate
                                  | '=' -> BinOp Equality
 
                                  | '-'  -> UnaryOp Negation 
                                  | '\\' -> UnaryOp Inverse
                                  | '~'  -> UnaryOp Not
+                                 | '"'  -> UnaryOp ToChar
 
-                                 | '@' -> Splitter
                                  | 'S' -> Splitter
 
                                  | 'D' -> Condition
@@ -100,7 +95,6 @@ namespace FPipeIO
                                  | 'I' -> Invocer
 
                                  | _ -> Empty
-
         let litToValue lit = match lit with
                              | IntLit L0 -> Number 0.0f
                              | IntLit L1 -> Number 1.0f
@@ -116,13 +110,13 @@ namespace FPipeIO
                              | BoolLit b -> Boolean b
 
                              | InvocLit -> Invocation
-
         let toString dt = match dt with
                           | Invocation -> "I"
                           | Boolean b -> b.ToString()
                           | Number n -> n.ToString()
+                          | String s -> s
 
-        let runCode (code : Code) (state : State) : State = 
+        let runCode (settings : Settings) (code : Code) (state : State) : State =             
             let run' (s : State) ((x,y) : int*int) = 
                 let mutable state' = s
                 if state'.ContainsKey(x,y) then 
@@ -185,8 +179,9 @@ namespace FPipeIO
                                match io with
                                | Print -> temp
                                           |> List.iter (toString >> (fun s -> (+) s " ") >> System.Console.Write) 
+                                          if (settings.DoEnter) then System.Console.WriteLine();
                                | Read -> if List.exists ((=) Invocation) temp then
-                                            let value = let v' = System.Console.ReadKey().KeyChar.ToString().ToUpper().Chars(0)
+                                            let value = let v' = System.Console.ReadKey(settings.ShowRead).KeyChar.ToString().ToUpper().Chars(0)
                                                                  |> charToCodeObject
                                                         match v' with 
                                                         | Lit l -> (litToValue l, true)
@@ -198,6 +193,10 @@ namespace FPipeIO
                                                     state'.[(x,y+1)] <- state'.[(x,y+1)] @ [v]
                                                 else state'.Add((x,y+1), [v])
                                             | _ -> ()   
+                               | Clear -> if List.exists ((=) Invocation) temp then
+                                             System.Console.Clear ()
+                               | NewLine -> if List.exists ((=) Invocation) temp then
+                                             System.Console.WriteLine ()
                     | Lit lit -> let temp : DataType list = state'.[(x,y)]
                                  state'.Remove((x,y)) |> ignore 
 
@@ -251,13 +250,22 @@ namespace FPipeIO
                                                  if state'.ContainsKey((x,y+1)) then
                                                     state'.[(x,y+1)] <- state'.[(x,y+1)] @ [Boolean <| List.fold (||) false bools]
                                                  else state'.Add((x,y+1), [Boolean <| List.fold (||) false bools])
+                                        | Concatanate -> let str = temp
+                                                                   |> List.map (fun x -> match x with 
+                                                                                          | String s -> s
+                                                                                          | _ -> "")
+                                                                   |> List.fold (+) ""
+                                                         if state'.ContainsKey((x,y+1)) then
+                                                             state'.[(x,y+1)] <- state'.[(x,y+1)] @ [String str]
+                                                         else state'.Add((x,y+1), [String str])
                                         | Eq -> let areEq = List.forall ((=) temp.Head) temp
                                                 if state'.ContainsKey((x,y+1)) then
                                                     state'.[(x,y+1)] <- state'.[(x,y+1)] @ [Boolean <| areEq]
                                                  else state'.Add((x,y+1), [Boolean <| areEq])
-                    | UnaryOp un -> match un with
-                                    | Negation -> let temp = state'.[(x,y)]
-                                                  state'.Remove((x,y)) |> ignore |> ignore
+                    | UnaryOp un -> let temp = state'.[(x,y)]
+                                    state'.Remove((x,y)) |> ignore 
+                                    match un with
+                                    | Negation -> 
                                                   let ne = temp
                                                            |> List.map (fun dataO -> match dataO with
                                                                                 | Number n -> Number (-n)
@@ -265,8 +273,7 @@ namespace FPipeIO
                                                   if state'.ContainsKey((x,y+1)) then
                                                     state'.[(x,y+1)] <- state'.[(x,y+1)] @ ne
                                                   else state'.Add((x,y+1), ne)
-                                    | Inverse -> let temp = state'.[(x,y)]
-                                                 state'.Remove((x,y)) |> ignore |> ignore
+                                    | Inverse -> 
                                                  let ne = temp 
                                                           |> List.map (fun dataO -> match dataO with
                                                                                | Number n -> Number (1.0f/n)
@@ -274,8 +281,7 @@ namespace FPipeIO
                                                  if state'.ContainsKey((x,y+1)) then
                                                     state'.[(x,y+1)] <- state'.[(x,y+1)] @ ne
                                                  else state'.Add((x,y+1), ne)
-                                    | Not -> let temp = state'.[(x,y)]
-                                             state'.Remove((x,y)) |> ignore |> ignore
+                                    | Not ->
                                              let ne = temp 
                                                       |> List.map (fun dataO -> match dataO with
                                                                            | Boolean b -> Boolean (not b)
@@ -283,6 +289,17 @@ namespace FPipeIO
                                              if state'.ContainsKey((x,y+1)) then
                                                 state'.[(x,y+1)] <- state'.[(x,y+1)] @ ne
                                              else state'.Add((x,y+1), ne)
+                                    | ToChar -> 
+                                                let ne = temp 
+                                                         |> List.map (fun dataO -> match dataO with
+                                                                                  | Number n -> int32 n
+                                                                                                |> char
+                                                                                                |> string
+                                                                                                |> String
+                                                                                  | x -> x)
+                                                if state'.ContainsKey((x,y+1)) then
+                                                    state'.[(x,y+1)] <- state'.[(x,y+1)] @ ne
+                                                else state'.Add((x,y+1), ne)
                     | Splitter -> let temp = state'.[(x,y)]
                                   state'.Remove((x,y)) |> ignore |> ignore
                                   if state'.ContainsKey((x+1, y)) then
@@ -322,6 +339,5 @@ namespace FPipeIO
             |> Array.toList
             |> List.filter (fun (x,y) -> x >= 0 && y >= 0)
             |> List.fold run' state
-
-            
   //C:\Users\user\Desktop\Programs\myProg.txt 
+  //C:\Users\user\Desktop\Programs\new.txt

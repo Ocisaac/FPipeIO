@@ -21,22 +21,35 @@ let getInitState (code : Code) : State =
             if isLit code.[y].[x] then
                 state.Add((x,y), [Invocation])
     state
-            
+
 [<EntryPoint>]
 let main argv = 
     printfn "Enter file location"
     let path = System.Console.ReadLine()
     printfn "Enter delay in miliseconds:"
     let delay = System.Int32.Parse(System.Console.ReadLine ())
+    let showChar =
+        printfn "Show characters on read? y/n"       
+        match System.Console.ReadLine () with
+        | "y" | "Y" -> false
+        | "n" | "N" -> true
+        | _ -> false
+    let doEnters  = 
+        printfn "Do enters on print? y/n"       
+        match System.Console.ReadLine () with
+        | "y" | "Y" -> true
+        | "n" | "N" -> false
+        | _ -> false
+
     let lines : string list = System.IO.File.ReadAllLines(path)
                               |> Array.toList
     let code =  translateCode lines
     let mutable state = getInitState code
     while true do
-        state <- runCode code state
+        state <- runCode {ShowRead = showChar; DoEnter = doEnters} code state
         System.Threading.Thread.Sleep delay
     printfn ""
-    0 // return an integer exit code
+    0
 
     //todo: make a settings type to pass with the code and state to run, such as
     //      whether to show the char I type in or not, do enters after printing and so on
