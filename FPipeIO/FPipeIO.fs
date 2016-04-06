@@ -3,7 +3,7 @@
     module FPipeIO =
         type Settings = {ShowRead : bool; DoEnter : bool}
 
-        type DataType =
+        type DataType = 
             | Number of float32
             | Boolean of bool
             | String of string

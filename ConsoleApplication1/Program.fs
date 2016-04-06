@@ -5,8 +5,14 @@ let translateCode (source : string list) : Code =
               |> (List.maxBy String.length))
               |> String.length 
               |> (+) 2
-    let translateLine (ln : string) : CodeObject list = 
-        Empty :: (List.map charToCodeObject (Array.toList <| ln.ToCharArray ())) @ [Empty]
+    let translateLine (ln' : string) : CodeObject list = 
+        let ln = (Array.toList <| ln'.ToCharArray ())
+                 |> List.map (fun c -> match c with
+                                       | '\t' -> List.replicate 4 ' '
+                                       | c' -> [c])
+                 |> List.concat
+        Empty :: (List.map charToCodeObject ln) @ 
+            List.replicate (max - List.length ln) Empty
     List.replicate max Empty 
     :: List.map translateLine source 
     @ [List.replicate max Empty]
@@ -53,3 +59,5 @@ let main argv =
 
     //todo: make a settings type to pass with the code and state to run, such as
     //      whether to show the char I type in or not, do enters after printing and so on
+
+    //todo:  add an option for amount of tabs to spaces
